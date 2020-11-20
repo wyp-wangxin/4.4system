@@ -3,7 +3,152 @@
 # IMPORTANT: Do not create world writable files or directories.
 # This is a common source of Android security bugs.
 #
+===========================================================================================================================================================
+wwxx
+init.rc文件是以块(section）为单位组织的，一个“块”可以包含多行。“块”分成两大类;一类称为“行为(action)”;另一类称为“服务(service)”。
+“行为”块以关键字“on”开始，表示一堆命令的集合，“服务”块以关键字“service”开始，表示启动某个进程的方式和参数。
+“块”以关键字“on”或“service”开始，直到下一个“on”或“service”结束，中间所有行都属于这个“块”(空行或注释行没有分割作用)。注释以‘#’号开始。
 
+无论是“行为”块还是“服务”块，并不是按照文件中的编排顺序逐一执行的。它们只是一份放在这里的定义，至于执行与否以及何时执行要由 init进程在运行时决定。
+“行为(action)”的关键字“on”后面跟的字串称为“触发器(trigger)"，
+例如，实例中的“boot”和“nonencrypted”。“触发器”后面是命令列表。命令列表中的每一行都是一条命令，命令的种类非常多。
+
+
+“触发器”有几种格式，最简单的一种是一个单纯的字符串。这种简单的格式可以使用命令“trigger”来触发，如"trigger post-fs-data"。另外一种常见的格式是“on property:<属性>=<值>”，如例子中第8行所示，如果属性值在运行时设成了这里指定的值，则“块”中的命令列表就会执行。在后面介绍属性系统时会详细分析。还有一些“触发器”格式在下一小节中详细介绍。
+
+“服务(service)块”的关键字“service”后面是服务名称。我们可以使用“start”命令加“服务名称”来启动一个服务，如"start adbd"。服务名称后面是进程的可执行文件的路径和启动参数。
+
+关键字“service”以下的行称为“选项”，每个选项占一行。选项也用很多种。常见的如“class"表示服务所属的类别，如例子中第12行所示，通过命令“ class_start ”可以同时启动一组服务，
+如例子中第7行所示。以上是对启动脚本组织结构的介绍，下一小节将详细介绍每个关键字的定义。
+
+
+
+文件 system/core/init/readme.txt中对 Init脚本的关键字做了介绍，本节的内容是对readme.txt的翻译整理。
+
+Android 的rc脚本语言包含了4种类型的声明:Actions、Commands、Services和 Options。所有这些都以行为单位，各种符号则由空格隔开。C语言风格的反斜杠号可用于在符号间插入空格。
+双引号可用于防止字符串被空格分割成多个记号。行末的反斜杠用于折行。注释行以井号(#)开头（允许以空格开头)。
+
+Actions和Services声明一个新的分组。所有命令或选项都属于最近申明的分组。位于第一个分组之前的命令或选项将被忽略。
+
+
+1. Actions（行为)
+
+Actions其实就是一序列的Commands 的集合。每个Actions 都有一个trigger(触发器)，它用于决定Action的执行时机。当一个符合Action触发条件的事件发生了，此Action 会加入到执行队列的末尾(除非它已经在队列里了)。
+
+每一个Action都将依次从队列中取出，此Action 的每个command 都将依次执行。在这些命令执行时 Init还同时处理着其他活动（设备节点的创建和销毁、设置属性、重启进程)。
+Actions的格式如下：
+on  <trigger>
+    <command>
+    <command>
+    <command>
+
+
+2. Services(服务）
+Services是一个后台程序，在 Init中启动，如果退出了可以由系统重启（可选)。Services（服务）的格式如下:
+
+
+service <name> <pathname> [<argument>]*
+    <option>
+    <option>
+    .......
+
+
+3. Options（选项)
+
+Options是 Services的修订项。它们决定一个 Service何时以及如何运行。
+
+critical:表示这是一个关键的Service。如果Service 4分钟内重新启动超过4次，系统将自动重启并进入recovery模式。
+
+disabled:表示服务不会通过trigger（触发器）启动。它必须以命令“start service_name"的形式启动。
+
+setenv <name> <value>:在 Service启动时将环境变量“name”设置为“value”。
+
+socket <name> <type> <perm> [<user> [<group>]]:创建一个名为/dev/socket/<name>的套接字，并把文件描述符传递给要启动的进程。<type>的值是“dgram”或者“stream ", User和 group的值默认为0。
+
+user <username>:在启动这个Service前设置Service的用户名，默认是root。如果进程没有相应的权限，将不能使用该命令。如果进程有root权限，可以在程序中设置到你想要的uid。
+
+group <groupname> [<groupname> ]*:在启动这个Service前设置Service的组名。除了第一个组名，剩下的组名通常用于设置进程的附加组（通过setgroups())。默认是root。
+
+oneshot: Service退出后不再重启。
+
+class <name>:给Service指定一个名字。所有同名字的服务可以同时启动和停止。如果不通过class选项指定一个名字，则默认名字是“default”。
+
+onrestart:当Service重启时,执行一条命令。
+
+
+
+4. Triggers(触发器）
+
+Triggers是一个用于匹配某种事件类型的字符串，它将使对应的Action执行。boot是 Init执行后的第一个触发的Triggers（在/init.conf装载之后)。
+
+<name> = <value>:这种形式的trigger 会在属性“name”设置为指定的值“value”时触或删除时触发。
+
+device-added-<path>，device-removed-<path>:这种形式的Trigger 会在一个设备文件增加或删除时触发。
+
+service-exited-<name>:这种形式的Trigger 会在一个指定的Service退出时触发。
+
+
+5.Commands(命令)
+
+Command是Action的命令列表中的命令，或者是Service的选项 onrestart 的参数命令。
+(1)exec <path> [<argument>]*: fork和启动一个程序。在程序完成启动前，Init将会阻塞。应尽量避免使用exec，它可能会引起Init卡死。
+
+(2)export <name><value>:设置全局环境变量<name>为<value>（所有在这命令执行后运行的进程都将继承该环境变量)。
+
+(3）ifup<interface>:启动网络接口<interface>。
+
+(4）import <filename>:引入一个 Init配置文件，扩展当前配置。
+
+(5) hostname <name>:设置主机名。
+
+(6）chdir <directory>:设置进程当前的工作目录。
+
+(7）chmod <octal-mode> <path>:设置文件或目录的访问权限。
+
+(8)chown <owner> <group> <path>:设置文件或目录的所有者和组。
+
+(9)chroot <directory>:设置进程的根目录。
+
+(10）class_start <serviceclass>:启动所有指定服务名称下的未运行的服务。
+
+(11） class_stop <serviceclass>:停止所有指定服务名称下的已运行的服务。
+
+(12)domainname <name>:设置域名。
+
+(13)insmod <path>:安装一个驱动模块。
+
+(14)mkdir <path> [mode] [owner] [group]:新创建一个目录<path>，可以指定访问权限、拥有者和组。如果没有指定，默认的访问权限是755，属于root用户和root组。
+
+(15)mount <type> <device> <dir> [<mountoption>]*:在指定目录下挂载一个设备。<device>可以是以mtd@name 的格式指定的一个mtd块设备。
+                                                 <mountoption>包括“ro”、“rw”、"remount”“noatime”等
+(16)restorecon <path>:重新存储指定的文件到一个由file contexts配置的安全上下文。不用指定目录,它们会被Init进程自动创建。     
+
+(17)setcon <securitycontext>:设置当前进程的安全上下文为指定的串。主要用在 early-init中去设置Init的安全上下文。
+
+(18）setenforce 0|1:设置SELinux系统级的enforcing状态。0代表permissive(如记录但是不拒绝服务)，1代表enforcing。
+
+(19)setkey:目前未使用。
+
+(20)setprop <name> <value>:设置系统属性<name>为<value>值。
+
+(21）setrlimit <resource> <cur> <max>:设置<resource>的 rlimit值。
+
+(22）setsebool <name> <value>:设置SELinux 的 boolean型属性“name”的值为“value”。“value”可以是1|true|on或者0|false|off。
+
+(23）start <service>:启动指定服务（如果此服务还未运行)。
+
+(24） stop <service>:停止指定服务（如果此服务在运行中)。
+
+(25) symlink <target> <path>:创建一个符号连接。
+
+(26) sysclktz <mins_west_of_gmt>:设置系统的时钟基准[0代表格林尼治平均时(GMT)为准]。
+
+(27) trigger <event>:触发一个事件。用于将一个 Action和另一个Action连在一起执行。
+
+(28） wait <path> 「<timeout>]:等待指定路径的文件创建出来，创建完成就停止等待，或者等到超时时间到。如果未指定超时时间，缺省是5秒。
+
+(29)write <path> <string> [<string>]*:打开指定的文件，并写入一个或多个字符串。
+===========================================================================================================================================================
 import /init.environ.rc
 import /init.usb.rc
 import /init.${ro.hardware}.rc
@@ -415,7 +560,7 @@ on property:sys.sysctl.tcp_def_init_rwnd=*
 
 
 ## Daemon processes to be run by init.
-##
+## wwxx (1) ueventd:负责响应uevent事件,创建设备节点文件:
 service ueventd /sbin/ueventd
     class core
     critical
@@ -435,6 +580,7 @@ on property:selinux.reload_policy=1
     restart ueventd
     restart installd
 
+#wwxx (2)console:包含常用的shell命令，如 ls、cd等:
 service console /system/bin/sh
     class core
     console
@@ -446,6 +592,7 @@ on property:ro.debuggable=1
     start console
 
 # adbd is controlled via property triggers in init.<platform>.usb.rc
+#wwxx (3）adbd:adb的守护进程:
 service adbd /sbin/adbd
     class core
     socket adbd stream 660 system system
@@ -456,6 +603,7 @@ service adbd /sbin/adbd
 on property:ro.kernel.qemu=1
     start adbd
 
+#(4) servicemanager: binder 的服务总管,负责binder 服务的注册和查找:
 service servicemanager /system/bin/servicemanager
     class core
     user system
@@ -467,20 +615,25 @@ service servicemanager /system/bin/servicemanager
     onrestart restart surfaceflinger
     onrestart restart drm
 
+#wwxx (5） vold:负责完成系统USB存储卡等扩展存储自动挂载的守护进程。
 service vold /system/bin/vold
     class core
     socket vold stream 0660 root mount
     ioprio be 2
 
+#(6)netd: Android的网络守护进程:
 service netd /system/bin/netd
     class main
     socket netd stream 0660 root system
     socket dnsproxyd stream 0660 root inet
     socket mdns stream 0660 root system
 
+
+#(7) debuggerd:负责异常退出的诊断。如果侦测到程序崩溃，debuggerd将把崩溃时的进程状态信息输出到文件和串口中，供开发人员分析和调试使用:
 service debuggerd /system/bin/debuggerd
     class main
 
+#(8）ril-deamon:手机底层通信系统的守护进程:
 service ril-daemon /system/bin/rild
     class main
     socket rild stream 660 root radio
@@ -488,6 +641,7 @@ service ril-daemon /system/bin/rild
     user root
     group radio cache inet misc audio log
 
+#(9) surfaceflinger:负责合成系统所有显示图层的服务进程;
 service surfaceflinger /system/bin/surfaceflinger
     class main
     user system
@@ -507,12 +661,15 @@ service drm /system/bin/drmserver
     user drm
     group drm system inet drmrpc
 
+
+#wwxx (10） media:系统多媒体部分的守护进程，包含了audio、mediaplayer 以及 camera等系统服务:
 service media /system/bin/mediaserver
     class main
     user media
     group audio camera inet net_bt net_bt_admin net_bw_acct drmrpc mediadrm
     ioprio rt 4
 
+#(11） bootanim:播放开机动画的进程:
 service bootanim /system/bin/bootanimation
     class main
     user graphics
@@ -520,6 +677,7 @@ service bootanim /system/bin/bootanimation
     disabled
     oneshot
 
+#(12） installd: Android的安装服务守护进程:
 service installd /system/bin/installd
     class main
     socket installd stream 600 system system

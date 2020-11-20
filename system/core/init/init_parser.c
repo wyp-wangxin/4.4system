@@ -36,6 +36,46 @@
 #define _REALLY_INCLUDE_SYS__SYSTEM_PROPERTIES_H_
 #include <sys/_system_properties.h>
 
+/* wwxx
+
+init_parse_config_file()-->read_file()--->parse_config()-->next_token()-->parse_new_section()
+
+parse_config()函数解析脚本文件的逻辑过程可以用一张流程图来表示。next_token()函数的作用就是寻找单词结束标志或行结束标志。
+如果是单词结束符，就先存放在数组 args 中;如果找到的是行结束符，则根据行中的第一个单词来判断是否是一个“section", 
+" section”的标志只有3个:关键字“on”、 " service”和"import”。
+如果是“section",则调用函数 parse_new_section()来开始一个新“section”的处理，否则把这一行继续作为当前“section”所属的行来处理。
+
+
+
+代码 parse_new_section() 函数，这个函数根据3个关键字来分别处理。
+
+(1)“on”关键字:调用parse_action()函数新创建和初始化一个结构“action”，并把它加入到"“action_list”列表中去。同时把行处理函数设为parse_line_action()。
+
+(2)“service”关键字:调用parse_service()函数新创建和初始化一个结构“service”，并把它加入到“service_list”列表中去。同时把行处理函数设为parse_line_service().
+
+(3)“import”关键字:新创建和初始化一个结构“import”，并把它加入到“import_list”列表中去。
+
+先看看action的处理函数 parse_action()，具体代码如下:
+
+parse_action()函数首先创建了一个结构 action 的对象act，初始化 act 的成员 act->commands 和 act->qlist后,
+把 act插入到全局的action列表“action_list”中。act→commands是一个命令队列的头，这个队列用来存放action中的命令列表。
+
+在调用list add_tail()函数之前并没有检查队列action_list中是否已经存在了同名的action。这说明Init的脚本文件中允许同名的action存在。
+.......
+
+
+
+4．执行action
+前面的解析过程只是把脚本文件中的“action”和“service”解析出来放到了各自的队列中。action的执行是在 Init 的代码中指定的。
+前面介绍了，Init进程的 main()函数中会通过调用action_for_each_trigger()函数来把需要执行的“action”加入到执行列表 action_queue中。
+例如，下面的命令就是把“boot”加入到执行列表中:
+    action_for_each_trigger("boot", action_add_queue_tail);
+    
+*/
+
+
+
+
 static list_declare(service_list);
 static list_declare(action_list);
 static list_declare(action_queue);
