@@ -163,7 +163,11 @@ void service_start(struct service *svc, const char *dynamic_args)
         /* starting a service removes it from the disabled or reset
          * state and immediately takes it out of the restarting
          * state if it was in there
+         wwxx
+         SVC DISABLED、SVC RESTARTING、SVC_ RESET、SVC_ RESTART这4个标志都是和启
+         动进程相关，需要先清除掉。如果服务带有SVC _RUNNING标志，说明服务进程已经运行，这里就不重复启动了。
          */
+
     svc->flags &= (~(SVC_DISABLED|SVC_RESTARTING|SVC_RESET|SVC_RESTART));
     svc->time_started = 0;
 
@@ -175,27 +179,27 @@ void service_start(struct service *svc, const char *dynamic_args)
     if (svc->flags & SVC_RUNNING) {
         return;
     }
-
+//2.如果服务需要有控制台，但是还没有启动控制台就退出
     needs_console = (svc->flags & SVC_CONSOLE) ? 1 : 0;
     if (needs_console && (!have_console)) {
         ERROR("service '%s' requires console\n", svc->name);
         svc->flags |= SVC_DISABLED;
         return;
-    }
-
+    }//.上面代码中的have_console 是一个全局变量，在函数console_init_action()中， 如果打开设备文件/dev/console成功，它会被置为1。
+//3.检查Service的二进制文件是否存在
     if (stat(svc->args[0], &s) != 0) {
         ERROR("cannot find '%s', disabling '%s'\n", svc->args[0], svc->name);
         svc->flags |= SVC_DISABLED;
         return;
     }
-
+//4.检查SVC_ ONESHOT参数
     if ((!(svc->flags & SVC_ONESHOT)) && dynamic_args) {
         ERROR("service '%s' must be one-shot to use dynamic args, disabling\n",
                svc->args[0]);
         svc->flags |= SVC_DISABLED;
         return;
     }
-
+//5.设置安全上下文
     if (is_selinux_enabled() > 0) {
         if (svc->seclabel) {
             scon = strdup(svc->seclabel);
@@ -231,7 +235,7 @@ void service_start(struct service *svc, const char *dynamic_args)
     }
 
     NOTICE("starting '%s'\n", svc->name);
-
+//6. fork子进程
     pid = fork();
 
     if (pid == 0) {
@@ -241,6 +245,7 @@ void service_start(struct service *svc, const char *dynamic_args)
         int fd, sz;
 
         umask(077);
+        //7.准备环境变量
         if (properties_inited()) {
             get_property_workspace(&fd, &sz);
             sprintf(tmp, "%d,%d", dup(fd), sz);
@@ -249,7 +254,7 @@ void service_start(struct service *svc, const char *dynamic_args)
 
         for (ei = svc->envvars; ei; ei = ei->next)
             add_environment(ei->name, ei->value);
-
+        //8.创建socket
         setsockcreatecon(scon);
 
         for (si = svc->sockets; si; si = si->next) {
@@ -273,6 +278,12 @@ void service_start(struct service *svc, const char *dynamic_args)
                       getpid(), svc->ioprio_class, svc->ioprio_pri, strerror(errno));
             }
         }
+        //9.处理标准输出、标准输入、标准错误3个文件描述符
+/*
+如果需要使用控制台console。 调用open console()打开设备文件“/dev/console", 然后把标准
+输出、标准输入、标准错误重定向到该设备文件:否则调用zap_ stdio), 把标准输出、标准输入、
+标准错误重定向到设备文件“/dev/null"。
+*/
 
         if (needs_console) {
             setsid();
@@ -317,7 +328,8 @@ void service_start(struct service *svc, const char *dynamic_args)
                 _exit(127);
             }
         }
-
+        //10. 执行exec
+        //执行完exec后,init进程的内存映像就被替换成新文件的映像了。代码中调用的是 execve()函数，它可以同时设置环境变量。
         if (!dynamic_args) {
             if (execve(svc->args[0], (char**) svc->args, (char**) ENV) < 0) {
                 ERROR("cannot execve('%s'): %s\n", svc->args[0], strerror(errno));
@@ -436,6 +448,13 @@ static void restart_processes()
     process_needs_restart = 0;
     service_for_each_flags(SVC_RESTARTING,
                            restart_service_if_needed);
+
+/*wwxx
+上面代码中 的service_for_each_flags()函 数会检查service_list列表中的每个服务，凡是带有SVC_RESTARTING标志的，都会
+使用该服务作为参数调用restart_service_if_needed()函数。restart_service_if_needed()函数中会调用service_start()函数来启动
+服务，我们主要关心的是init 如何启动的服务进程，中间的代码就不分析了，直接看service_start()函数的代码.
+service_start()函数的代码也比较长，我们还是分成一段一段地讲解。
+*/    
 }
 
 static void msg_start(const char *name)
@@ -1004,12 +1023,12 @@ int main(int argc, char **argv)
          * talk to the outside world.
          */
     open_devnull_stdio();
-    klog_init();
-    property_init();
+    klog_init();//wwxx 将log重定向到/proc/kmsg中
+    property_init();//wwxx 初始化环境变量
 
     get_hardware_name(hardware, &revision);
 
-    process_kernel_cmdline();
+    process_kernel_cmdline();//wwxx 解析内核启动参数
 
     union selinux_callback cb;
     cb.func_log = klog_write;
@@ -1032,13 +1051,35 @@ int main(int argc, char **argv)
 
     INFO("property init\n");
     if (!is_charger)
-        property_load_boot_defaults();
+        property_load_boot_defaults();//导入默认环境变量 defuat.prop
 
     INFO("reading config file\n");
-    init_parse_config_file("/init.rc");
+    init_parse_config_file("/init.rc");// 解析启动脚本，解析完成后的结果是将init 文件中的Server 项和Action项分别加入到内部Service 列表
+                                        //“service_ list" 和Action列表“action_list" 中(Init 脚本的解析过程在下节会详细讲述)。
+    action_for_each_trigger("early-init", action_add_queue_tail);//将解析脚本中对应的操作加到action_queue队列中
 
-    action_for_each_trigger("early-init", action_add_queue_tail);
 
+    //queue_builtin_action 将解析脚本中对应的操作加到action_queue队列中
+    /*
+        queue_builtin_action函数用来动态生成一个 Action 并插入到执行列表“action queue"中。
+        插入的Action由一个函数指针和一个表示名字的字符串组成。Android 在以前的版本中直接调用
+        这些函数来完成某些初始化的工作，但是，这些函数可能会依赖int.rc里定义的一些命 令和服务
+        的执行情况。现在把这些初始化函数也通过Action的形式插入到执行列表中，这样就能控制它们
+        的执行顺序了。
+
+插入的函数有:
+    ●wait_for_coldboot_done_action()函数: 等待冷插拔设备初始化完成。
+    ●mix_hwrng_into_linux_rng_action()函数: 从硬件RNG的设备文件/dev/hw_random中读取512字节并写到Linux RNG的设备文件/dev/urandom中。
+    ●console_jinit_action()函数: 在屏幕上显示Android字样的Logo。
+    ●property_gservice_init_action()函数: 初始化属性服务，读取系统预置的属性值。
+    ●signal_ init _action(函数: 初始化信号处理模块。
+    ●check_ startup_ action0函数: 检查是否已经完成Init进程初始化，如果完成则删除booting文件。
+    queue_ property_ triggers action()函数: 检查Action列表中通过修改属性来触发的Action,查看相关的属性值是否已经设置，
+    如果已经设置，则将该Action加入到执行列表中。现在，执行列表“action_queue” 的内容.
+
+
+
+    */
     queue_builtin_action(wait_for_coldboot_done_action, "wait_for_coldboot_done");
     queue_builtin_action(mix_hwrng_into_linux_rng_action, "mix_hwrng_into_linux_rng");
     queue_builtin_action(keychord_init_action, "keychord_init");
@@ -1078,13 +1119,20 @@ int main(int argc, char **argv)
 #if BOOTCHART
     queue_builtin_action(bootchart_init_action, "bootchart_init");
 #endif
-
+/*wwxx
+(14) main(函数最后会进入一个无限for循环，每次循环开始都会调用execute_one_command()函数来执行命令列表中的一条命令，
+同时调用restart_processesO函数来启动服务进程:
+*/
     for(;;) {
         int nr, i, timeout = -1;
 
         execute_one_command();
         restart_processes();
-
+            /*
+            (15) Init 进程初始化系统后，会化身为守护进程来处理子进程的死亡信号，修改属性的请求
+            和组合键盘键事件。监听事件使用的是poll系统调用，使用poll前需要创建或获得用于监听这些
+            事件的文件描述符，同时初始化poll调用需要的数据结构:
+            */
         if (!property_set_fd_init && get_property_set_fd() > 0) {
             ufds[fd_count].fd = get_property_set_fd();
             ufds[fd_count].events = POLLIN;
@@ -1106,7 +1154,10 @@ int main(int argc, char **argv)
             fd_count++;
             keychord_fd_init = 1;
         }
-
+/*
+(16) poll()调用可以设置等待超时的时间，参数为-1 表示无限等待，参数为0表示要立刻返回，
+参数为正数表示要等待的时间。下面代码中计算的timeout时间就是用于poll调用的参数:
+*/
         if (process_needs_restart) {
             timeout = (process_needs_restart - gettime()) * 1000;
             if (timeout < 0)
@@ -1126,7 +1177,14 @@ int main(int argc, char **argv)
             }
         }
 #endif
+/*
+(17)调用pol(0来监听事件的发生。如果监听到修改属性的事件，将会调用处理函数
+handle_ property_ set fd);如果监听到组合键盘消息，将会调用处理函数handle_ keychord();如果
+监听到信号，将会调用处理函数handle_ signal();
 
+poll()函数和select()函数类似，用于监测多个等待事件，但是，poll0比 select(更加高效。如
+果没有事件，进程将会挂起，如果监听到任何一个事件发生，pollO)将 唤醒睡眠的进程。
+*/
         nr = poll(ufds, fd_count, timeout);
         if (nr <= 0)
             continue;
