@@ -128,7 +128,25 @@ static void createChildChains(IptablesTarget target, const char* table, const ch
         execIptables(target, "-t", table, "-A", parentChain, "-j", *childChain, NULL);
     } while (*(++childChain) != NULL);
 }
+/*wwxx
+CommandListener对象用来处理从 NetworkManagementService中发送的命令。CommandListener类中注册的命令如下:
+其中:
+InterfaceCmd 对象用来处理各种网络Interface相关的命令，例如，添加、删除 Interface,
 
+列出所有Interface等：
+IpFwdCmd 对象用来处理IP转发的命令，包括status、enable 和 disable命令;
+TetherCmd 对象用来处理网络共享的命令;
+NatCmd对象用来处理带宽控制的命令;
+ListTtysCmd 用来处理获取pppd中 tty列表的命令;
+PppdCmd 用来处理连接pppd拨号网络的命令，如 attach、detach 等;SoftapCmd用来处理控制softap的命令，如 startap、stopap、fwreload等;
+BandwidthControlCmd 用来处理带宽控制的命令;
+IdletimerControlCmd 用来处理设置监听网络接口空闲的命令;
+ResolverCmd 用来处理解析网络地址的命令，包括设置dns服务器的地址;
+FirewallCmd 用来处理设置防火墙的命令;
+ClatdCmd 用来处理启动或停止clatd的命令。
+这些命令的数量非常庞大，但是处理的模式相似，比较简单，这里就不展开分析了。
+
+*/
 CommandListener::CommandListener(UidMarkMap *map) :
                  FrameworkListener("netd", true) {
     registerCmd(new InterfaceCmd());

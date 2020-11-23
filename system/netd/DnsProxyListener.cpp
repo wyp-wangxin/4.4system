@@ -38,7 +38,82 @@
 #include "NetdConstants.h"
 #include "DnsProxyListener.h"
 #include "ResponseCode.h"
+/*wwxx
+GetAddrInfoCmd 命令用来完成主机名到P地址解析。
 
+GetHostByAddrCmd 命令用来完成从IP地址到主机名的解析。
+
+GetHostByNameCmd 命令通过主机名获得主机信息。
+
+DnsProxyListener 监听 socket“/dev/socket/dnsproxyd”上的连接，但是和CommandListener不一样，它并没有和Java层的 NativeDamonConnector对象连接在一起。
+
+我们看看libc中的getaddrinfo()函数的代码(/bionic/libc/netbsd/net/getaddrinfo.c)
+int getaddrinfo(const char *hostname, const char *servname,
+    const struct addrinfo *hints, struct addrinfo **res)
+{
+ return android_getaddrinfoforiface(hostname, servname, hints, NULL, 0, res);
+}
+
+getaddrinfo()函数只是调用了android_getaddrinfoforiface()函数，代码如下:
+/bionic/libc/netbsd/net/getaddrinfo.c
+int android_getaddrinfoforiface(const char *hostname, const char *servname,
+    const struct addrinfo *hints, const char *iface, int mark, struct addrinfo **res)
+{
+    const char* cache_mode = getenv("ANDROID_DNS_MODE");
+.........
+    if (cache_mode == NULL || strcmp(cache_mode, "local") != 0) {
+        // we're not the proxy - pass the request to them
+        return android_getaddrinfo_proxy(hostname, servname, hints, res, iface);
+    }
+.........
+    return error;
+}
+android_getaddrinfoforiface()函数会获取环境变量“ANDROID_DNS_MODE”的值,如果值为NULL或者不等于“local”，则调用 android_getaddrinfo_proxy()函数，代码如下:
+static int android_getaddrinfo_proxy(
+    const char *hostname, const char *servname,
+    const struct addrinfo *hints, struct addrinfo **res, const char *iface)
+{
+    int sock;
+    .........
+    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    memset(&proxy_addr, 0, sizeof(proxy_addr));
+    proxy_addr.sun_family = AF_UNIX;
+    //连接 DnsProxyListener 中监听的socket,init.rc里面创建的那一个
+    strlcpy(proxy_addr.sun_path, "/dev/socket/dnsproxyd",
+        sizeof(proxy_addr.sun_path));
+    if (TEMP_FAILURE_RETRY(connect(sock,
+                       (const struct sockaddr*) &proxy_addr,
+                       sizeof(proxy_addr))) != 0) {
+        close(sock);
+        return EAI_NODATA;
+    }
+
+    // Send the request.
+    proxy = fdopen(sock, "r+");//打开socket
+    if (fprintf(proxy, "getaddrinfo %s %s %d %d %d %d %s",
+        ...) {
+        goto exit;
+    }
+    //发送请求
+    if (fputc(0, proxy) == EOF ||
+        fflush(proxy) != 0) {
+        goto exit;
+    }
+
+    char buf[4];
+    //读结果
+    if (fread(buf, 1, sizeof(buf), proxy) != sizeof(buf)) {
+        goto exit;
+    }
+    ...........
+}
+android_getaddrinfo_proxy()函数连接DnsProxyListener 中监听的socket，然后发送命令。
+从这里我们知道DnsProxyListener对象监听的是来自Bionic 的 netbsd模块的连接。
+
+下面看看GetAddrInfoCmd 命令是如何处理的, GetAddrInfoCmd 的 runCommand()函数代码如下:(在本文件中 int DnsProxyListener::GetAddrInfoCmd::runCommand)
+*/
 DnsProxyListener::DnsProxyListener(UidMarkMap *map) :
                  FrameworkListener("dnsproxyd") {
     registerCmd(new GetAddrInfoCmd(map));
@@ -122,7 +197,18 @@ static bool sendhostent(SocketClient *c, struct hostent *hp) {
     success &= sendLenAndData(c, 0, ""); // null to indicate we're done
     return success;
 }
+/*
+run()函数又调用了 android_getaddrinfoforiface()函数。我们本来就是从 android_getaddrinfoforiface()函数中一路分析过来的，这里又调用了这个函数，
+难道是递归调用吗?我们要注意，其实进程已经发生了变化，前面调用这个函数是在某个用户进程中，而现在处于netd进程中，我们前面分析netd的 main()函数时，
+已经注意到main()函数中增加了一个环境变量，如下所示:
+setenv("ANDROID_DNS_MODE", "local", 1);
 
+"ANDROID_DNS_MODE"就是 android_getaddrinfoforiface()函数中用来判断的环境变量，因此,不会出现递归调用。
+那么为什么要绕到 netd进程调用这个函数呢?前面介绍 CommandListener 的命令时我们简单介绍了 ResolverCmd 的作用，这个对象中有设置DNS服务器的命令，
+命令的结果是将DNS服务器保存在了netbsd模块的_res_cache_list列表中，除了这条命令外，ResolverCmd中还有一些和DNS相关的命令将引起netd进程中 DNS相关的cache变化。
+因为，只有netd进程中才会保存有这些信息，所以，普通进程进行地址解析时就必须到netd 中来完成实际的解析工作了。
+
+*/
 void DnsProxyListener::GetAddrInfoHandler::run() {
     if (DBG) {
         ALOGD("GetAddrInfoHandler, now for %s / %s / %s", mHost, mService, mIface);
@@ -169,6 +255,11 @@ DnsProxyListener::GetAddrInfoCmd::GetAddrInfoCmd(UidMarkMap *uidMarkMap) :
         mUidMarkMap = uidMarkMap;
 }
 
+
+/*wwxx
+runCommand()函数中创建一个 GetAddrInfoHandler 对象，并调用了它的 start()函数，start()函数中将创建一个线程,
+线程的运行函数如下(在本文件中 void DnsProxyListener::GetAddrInfoHandler::run )
+*/
 int DnsProxyListener::GetAddrInfoCmd::runCommand(SocketClient *cli,
                                             int argc, char **argv) {
     if (DBG) {

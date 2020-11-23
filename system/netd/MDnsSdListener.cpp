@@ -40,7 +40,12 @@
 
 #define MDNS_SERVICE_NAME "mdnsd"
 #define MDNS_SERVICE_STATUS "init.svc.mdnsd"
+/*wwxx
+MDnsSdListener类中注册的命令如下:
 
+MDnsSdListener 中的命令主要作用是和 mdsnd 守护进程进行交互。包括启动和停止 mdsnd守护进程，通过mdsnd来解析一些服务的地址等。
+MDnsSdListener服务于Java层的NsdService，它们的关系可以用图19.3表示。
+*/
 MDnsSdListener::MDnsSdListener() :
                  FrameworkListener("mdns", true) {
     Monitor *m = new Monitor();

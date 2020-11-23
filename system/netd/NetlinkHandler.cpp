@@ -44,7 +44,19 @@ int NetlinkHandler::start() {
 int NetlinkHandler::stop() {
     return this->stopListener();
 }
+/*wwxx
+onEvent()函数中，对net类的uenvent 的处理只是发消息通知Java层（函数中的各种 notify函数只是调用CommandListener的接口向Java层发送消息)，底层没有进行任何的处理。这里收到的消息有。
+NetlinkEvent::NlActionAdd:系统中增加了一种网络 interface。
+NetlinkEvent: NlActionRemove:系统中移除了一种网络 interface。
+NetlinkEvent::NIActionChange:系统中某种网络的interface发生了变化。
+NetlinkEvent::N1ActionLinkUp:系统中某个网络 interface建立了连接。
+NetlinkEvent::NlActionLinkDown:系统中某个网络interface断开了连接。
+NetlinkEvent::N1ActionAddressUpdated:系统中某个网络interface的地址发生了变化。
+NetlinkEvent::NlActionAddressRemoved:系统中某个网络interface的地址被移除了。
+NetlinkEvent:: NlActionRouteUpdated:系统路由更新。
+另外，还有来自流量控制的通知消息和某个网络Interface进入 activity或idle状态的消息。
 
+*/
 void NetlinkHandler::onEvent(NetlinkEvent *evt) {
     const char *subsys = evt->getSubsystem();
     if (!subsys) {

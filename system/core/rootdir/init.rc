@@ -137,7 +137,7 @@ Command是Action的命令列表中的命令，或者是Service的选项 onrestar
 
 (23）start <service>:启动指定服务（如果此服务还未运行)。
 
-(24） stop <service>:停止指定服务（如果此服务在运行中)。
+(24）stop <service>:停止指定服务（如果此服务在运行中)。
 
 (25) symlink <target> <path>:创建一个符号连接。
 
