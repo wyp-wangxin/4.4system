@@ -33,7 +33,9 @@ NetlinkHandler::NetlinkHandler(int listenerSocket) :
 
 NetlinkHandler::~NetlinkHandler() {
 }
-
+/*
+start()函数只是调用了SocketListener的startListener()函数,
+*/
 int NetlinkHandler::start() {
     return this->startListener();
 }
@@ -41,7 +43,10 @@ int NetlinkHandler::start() {
 int NetlinkHandler::stop() {
     return this->stopListener();
 }
-
+/*wwxx
+NetlinkHandler 的 onEvent()函数中会判断event属于哪个子系统的，如果属于“block”，则调用VolumeManager的handleBlockEvent()函数来处理，代码如下:
+(system\vold\VolumeManager.cpp)
+*/
 void NetlinkHandler::onEvent(NetlinkEvent *evt) {
     VolumeManager *vm = VolumeManager::Instance();
     const char *subsys = evt->getSubsystem();
@@ -51,7 +56,7 @@ void NetlinkHandler::onEvent(NetlinkEvent *evt) {
         return;
     }
 
-    if (!strcmp(subsys, "block")) {
-        vm->handleBlockEvent(evt);
+    if (!strcmp(subsys, "block")) {//如果event的类型是block
+        vm->handleBlockEvent(evt);//调用volumeManager的handleBlockEvent来处理
     }
 }

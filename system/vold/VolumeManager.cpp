@@ -129,7 +129,10 @@ int VolumeManager::addVolume(Volume *v) {
     mVolumes->push_back(v);
     return 0;
 }
-
+/*wwxx
+VolumeManager 的 handleBlockEvent() 函数会调用它管理的所有 DirectVolume 对象的 handleBlockEvent() 函数，如果函数中处理了 event，会返回0，
+handleBlockEvent() 函数将结束处理并返回。DirectVolume对象的handleBlockEvent()函数.
+*/
 void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     const char *devpath = evt->findParam("DEVPATH");
 
@@ -137,11 +140,11 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     VolumeCollection::iterator it;
     bool hit = false;
     for (it = mVolumes->begin(); it != mVolumes->end(); ++it) {
-        if (!(*it)->handleBlockEvent(evt)) {
+        if (!(*it)->handleBlockEvent(evt)) {// dui每个Directvolume对象，调用它 handleBlockEvent 来处理这个event
 #ifdef NETLINK_DEBUG
             SLOGD("Device '%s' event handled by volume %s\n", devpath, (*it)->getLabel());
 #endif
-            hit = true;
+            hit = true;//如果某个volume 对象处理了Event，则返回
             break;
         }
     }
@@ -167,9 +170,12 @@ int VolumeManager::listVolumes(SocketClient *cli) {
     cli->sendMsg(ResponseCode::CommandOkay, "Volumes listed.", false);
     return 0;
 }
-
+/*wwxx
+VolumeManager处理这一类命令的模式都相同，通过 lookupVolume()函数和参数label找到对应的 DirectVolume对象，然后调用DirectVolume对象中对应的处理函数。下面再看看处理函数
+formatVol()的实现:system\vold\Volume.cpp
+*/
 int VolumeManager::formatVolume(const char *label, bool wipe) {
-    Volume *v = lookupVolume(label);
+    Volume *v = lookupVolume(label);//根据lable找到对应的Directvolume对象
 
     if (!v) {
         errno = ENOENT;
@@ -181,7 +187,7 @@ int VolumeManager::formatVolume(const char *label, bool wipe) {
         return -1;
     }
 
-    return v->formatVol(wipe);
+    return v->formatVol(wipe);//调用DirectVolume对象的formatVol
 }
 
 int VolumeManager::getObbMountPath(const char *sourceFile, char *mountPath, int mountPathLen) {

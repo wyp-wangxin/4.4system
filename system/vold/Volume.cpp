@@ -228,15 +228,18 @@ int Volume::createDeviceNode(const char *path, int major, int minor) {
     }
     return 0;
 }
-
+/*wwxx
+formatVol()函数先检查设备的状态，包括设备中是否已经插入了卡（外置SD 卡设备)，设备的状态是否处于State_Idle状态，分区是否已经挂载了。
+检查通过后，如果格式化的是整个设备，还需要调用initializeMbr()函数来创建磁盘上的mbr块，最后调用底层系统的format()函数来格式化磁盘。
+*/
 int Volume::formatVol(bool wipe) {
 
     if (getState() == Volume::State_NoMedia) {
         errno = ENODEV;
-        return -1;
+        return -1;//如果设备中没有插入卡,返回
     } else if (getState() != Volume::State_Idle) {
         errno = EBUSY;
-        return -1;
+        return -1; //如果设备没有准备好,返回
     }
 
     if (isMountpointMounted(getMountpoint())) {
@@ -244,7 +247,7 @@ int Volume::formatVol(bool wipe) {
         setState(Volume::State_Mounted);
         // mCurrentlyMountedKdev = XXX
         errno = EBUSY;
-        return -1;
+        return -1;//如果分区还没有挂载，返回
     }
 
     bool formatEntireDevice = (mPartIdx == -1);
@@ -261,7 +264,7 @@ int Volume::formatVol(bool wipe) {
     if (formatEntireDevice) {
         sprintf(devicePath, "/dev/block/vold/%d:%d",
                 MAJOR(diskNode), MINOR(diskNode));
-
+        //如果格式化的是整个设备，先初始化设备的mbr
         if (initializeMbr(devicePath)) {
             SLOGE("Failed to initialize MBR (%s)", strerror(errno));
             goto err;
@@ -275,7 +278,7 @@ int Volume::formatVol(bool wipe) {
         SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
     }
 
-    if (Fat::format(devicePath, 0, wipe)) {
+    if (Fat::format(devicePath, 0, wipe)) {//调用底层的格式化函数
         SLOGE("Failed to format (%s)", strerror(errno));
         goto err;
     }

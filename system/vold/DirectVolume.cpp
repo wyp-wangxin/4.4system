@@ -90,7 +90,18 @@ void DirectVolume::handleVolumeShared() {
 void DirectVolume::handleVolumeUnshared() {
     setState(Volume::State_Idle);
 }
+/*
+从驱动发送的消息有3大类: NIActionAdd、NlActionRemove和 NlActionChange 。handleBlockEvent()函数会比较消息中的 DEVPATH 参数和 DirectVolume 的路径参数，相等才会处
+理。底层什么时候会发送这3种消息?例如插入和移除了SD 卡,就会触发驱动发送消息通知vold模块。对于每种消息，根据设备类型是Disk还是Partition(分区)，最后一共有6种处理函数:
+handleDiskAdded;
+handlePartitionAdded;
+handleDiskRemoved;
+handlePartitionChanged;
+handleDiskChanged;
+handlePartitionChanged。
 
+下面以handleDiskAdded()函数为例，看看 DirectVolume 如何处理 Event，代码如下:(void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt))
+*/
 int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
     const char *dp = evt->findParam("DEVPATH");
 
@@ -101,7 +112,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
             int action = evt->getAction();
             const char *devtype = evt->findParam("DEVTYPE");
 
-            if (action == NetlinkEvent::NlActionAdd) {
+            if (action == NetlinkEvent::NlActionAdd) {// add消息
                 int major = atoi(evt->findParam("MAJOR"));
                 int minor = atoi(evt->findParam("MINOR"));
                 char nodepath[255];
@@ -109,6 +120,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                 snprintf(nodepath,
                          sizeof(nodepath), "/dev/block/vold/%d:%d",
                          major, minor);
+                ////创建设备节点
                 if (createDeviceNode(nodepath, major, minor)) {
                     SLOGE("Error making device node '%s' (%s)", nodepath,
                                                                strerror(errno));
@@ -119,7 +131,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                     handlePartitionAdded(dp, evt);
                 }
                 /* Send notification iff disk is ready (ie all partitions found) */
-                if (getState() == Volume::State_Idle) {
+                if (getState() == Volume::State_Idle) {//通知Java层有SD卡插入了
                     char msg[255];
 
                     snprintf(msg, sizeof(msg),
@@ -128,13 +140,13 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskInserted,
                                                          msg, false);
                 }
-            } else if (action == NetlinkEvent::NlActionRemove) {
+            } else if (action == NetlinkEvent::NlActionRemove) {//remove消息
                 if (!strcmp(devtype, "disk")) {
                     handleDiskRemoved(dp, evt);
                 } else {
                     handlePartitionRemoved(dp, evt);
                 }
-            } else if (action == NetlinkEvent::NlActionChange) {
+            } else if (action == NetlinkEvent::NlActionChange) {//chanage消息
                 if (!strcmp(devtype, "disk")) {
                     handleDiskChanged(dp, evt);
                 } else {
@@ -151,11 +163,23 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
     return -1;
 }
 
-void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
-    mDiskMajor = atoi(evt->findParam("MAJOR"));
-    mDiskMinor = atoi(evt->findParam("MINOR"));
 
-    const char *tmp = evt->findParam("NPARTS");
+/*
+handleDiskAdded()函数主要工作是设置 DirectVolume 对象的状态，让它和底层的硬件状态保持一致，这样当上层软件进行查询时，返回的结果能够和硬件的实际状况一致。
+handleDiskAdded()函数从消息中得到了磁盘的分区数量，如果分区数量为0，设备的状态马上可以变成State_Idle,这样上层软件就可以使用这个设备了，
+如果分区数量不为0，还需要等到增加分区的消息到来后才能让设备的状态变为State_Idle，当前只能先将设备的状态改为State_Pending.
+
+理解了 VolumeManager 和 DirectVolume 如何处理来自驱动的消息后，我们再看看VolumeManager如何处理来自MountService的调用。
+在前面 CommandListener 的消息处理函数中已经介绍了，对来自MountService的消息，最后将调用VolumeManager的函数来处理。
+
+下面我们以格式化分区的命令为例来分析VolumeManager的处理流程。 VolumeManager 中执行格式化的函数是 formatVolume()，代码如下:(system\vold\VolumeManager.cpp)
+
+*/
+void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
+    mDiskMajor = atoi(evt->findParam("MAJOR"));//得到主设备号
+    mDiskMinor = atoi(evt->findParam("MINOR"));//得到次设备号
+
+    const char *tmp = evt->findParam("NPARTS");//得到分区数量
     if (tmp) {
         mDiskNumParts = atoi(tmp);
     } else {
@@ -170,17 +194,17 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
     }
     mPendingPartMap = partmask;
 
-    if (mDiskNumParts == 0) {
+    if (mDiskNumParts == 0) {//如果分区数量为0,设备的状态可以现在就设置成Idle状态
 #ifdef PARTITION_DEBUG
         SLOGD("Dv::diskIns - No partitions - good to go son!");
 #endif
         setState(Volume::State_Idle);
-    } else {
+    } else {//如果分区数量不为0，设备需要等待分区准备好才能设置成Idle状态
 #ifdef PARTITION_DEBUG
         SLOGD("Dv::diskIns - waiting for %d partitions (mask 0x%x)",
              mDiskNumParts, mPendingPartMap);
 #endif
-        setState(Volume::State_Pending);
+        setState(Volume::State_Pending);//先设置成pending状态
     }
 }
 

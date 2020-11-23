@@ -41,7 +41,10 @@
 #include "fstrim.h"
 
 #define DUMP_ARGS 0
+/*
+CommandListener的构造函数中注册了很多的命令，registerCmd()函数的作用就是把命令对象加入到 mCommands列表中。
 
+*/
 CommandListener::CommandListener() :
                  FrameworkListener("vold", true) {
     registerCmd(new DumpCmd());
@@ -130,7 +133,7 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     VolumeManager *vm = VolumeManager::Instance();
     int rc = 0;
 
-    if (!strcmp(argv[1], "list")) {
+    if (!strcmp(argv[1], "list")) {//处理list命令
         return vm->listVolumes(cli);
     } else if (!strcmp(argv[1], "debug")) {
         if (argc != 3 || (argc == 3 && (strcmp(argv[2], "off") && strcmp(argv[2], "on")))) {
@@ -161,7 +164,7 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
             revert = true;
         }
         rc = vm->unmountVolume(argv[2], force, revert);
-    } else if (!strcmp(argv[1], "format")) {
+    } else if (!strcmp(argv[1], "format")) {//处理format命令
         if (argc < 3 || argc > 4 ||
             (argc == 4 && strcmp(argv[3], "wipe"))) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume format <path> [wipe]", false);
@@ -171,8 +174,8 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         if (argc >= 4 && !strcmp(argv[3], "wipe")) {
             wipe = true;
         }
-        rc = vm->formatVolume(argv[2], wipe);
-    } else if (!strcmp(argv[1], "share")) {
+        rc = vm->formatVolume(argv[2], wipe);//调用volumeManager的formatvolume函数
+    } else if (!strcmp(argv[1], "share")) {//处理share命令
         if (argc != 4) {
             cli->sendMsg(ResponseCode::CommandSyntaxError,
                     "Usage: volume share <path> <method>", false);
@@ -221,7 +224,10 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     }
 
     return 0;
-}
+}/*wwxx
+VolumeCmd 的 runCommand()函数通过比较参数 argv[1]来区分不同的命令，这些命令都和磁盘处理有关系，例如list、 mount、unmount, format等。
+这些命令的处理则由VolumeManager中的函数完成，下节再继续分析。
+*/
 
 CommandListener::StorageCmd::StorageCmd() :
                  VoldCommand("storage") {

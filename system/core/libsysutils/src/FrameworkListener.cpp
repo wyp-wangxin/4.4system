@@ -43,11 +43,14 @@ void FrameworkListener::init(const char *socketName, bool withSeq) {
     mCommandCount = 0;
     mWithSeq = withSeq;
 }
-
+/*wwxx
+onDataAvailable()函数从 socket 中读取数据，这些数据是一个或多个以0结尾的字符串，每个字符串都是一条命令。
+然后调用dispatchCommand()函数来分发命令，代码如下:void FrameworkListener::dispatchCommand
+*/
 bool FrameworkListener::onDataAvailable(SocketClient *c) {
     char buffer[CMD_BUF_SIZE];
     int len;
-
+    //从socket中读数据
     len = TEMP_FAILURE_RETRY(read(c->getSocket(), buffer, sizeof(buffer)));
     if (len < 0) {
         SLOGE("read() failed (%s)", strerror(errno));
@@ -63,7 +66,7 @@ bool FrameworkListener::onDataAvailable(SocketClient *c) {
     for (i = 0; i < len; i++) {
         if (buffer[i] == '\0') {
             /* IMPORTANT: dispatchCommand() expects a zero-terminated string */
-            dispatchCommand(c, buffer + offset);
+            dispatchCommand(c, buffer + offset);//分发命令
             offset = i + 1;
         }
     }
@@ -178,8 +181,8 @@ void FrameworkListener::dispatchCommand(SocketClient *cli, char *data) {
     for (i = mCommands->begin(); i != mCommands->end(); ++i) {
         FrameworkCommand *c = *i;
 
-        if (!strcmp(argv[0], c->getCommand())) {
-            if (c->runCommand(cli, argc, argv)) {
+        if (!strcmp(argv[0], c->getCommand())) {//匹配命令
+            if (c->runCommand(cli, argc, argv)) {//调用命令的处理函数
                 SLOGW("Handler '%s' error (%s)", c->getCommand(), strerror(errno));
             }
             goto out;
@@ -196,4 +199,12 @@ overflow:
     LOG_EVENT_INT(78001, cli->getUid());
     cli->sendMsg(500, "Command too long", false);
     goto out;
-}
+}/*wwxx
+dispatchCommand()函数比较长，前面的代码都是在检查命令的格式是否正确，我们就不分析了。
+最后会检查mComands中是否存在和命令匹配的FrameworkCommand对象，如果存在，则调用它的runCommand()函数。
+那么mComands 中的 FrameworkCommand对象是如何创建的呢?看看CommandListener的构造函数就知道了:
+(system\vold\CommandListener.cpp)
+
+我们看看VolumeCmd命令的处理函数runCommand()，代码如下:
+
+*/
