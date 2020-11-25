@@ -642,6 +642,7 @@ service ril-daemon /system/bin/rild
     group radio cache inet misc audio log
 
 #(9) surfaceflinger:负责合成系统所有显示图层的服务进程;
+#init进程会根据init.rc配置启动surfaceflinger进程，surfaceflinger进程启动了，跟着就会跑进程的 main_surfaceflinger.cpp main()函数。
 service surfaceflinger /system/bin/surfaceflinger
     class main
     user system
@@ -670,6 +671,10 @@ service media /system/bin/mediaserver
     ioprio rt 4
 
 #(11） bootanim:播放开机动画的进程:
+#应用程序bootanimation的用户和用户组名称分别被设置为graphics。注意， 用来启动应用程序bootanimation的服务是disable的，即init进程在启动的时候，不会主动将应用程序bootanimation启动起来。
+# 当SurfaceFlinger服务启动的时候，它会通过修改系统属性ctl.start的值来通知init进程启动应用程序bootanimation，以便可以显示第三个开机画面，而当System进程将系统中的关键服务都启动起来之后，
+# ActivityManagerService服务就会通知SurfaceFlinger服务来修改系统属性ctl.stop的值，以便可以通知init进程停止执行应用程序bootanimation，即停止显示第三个开机画面。
+
 service bootanim /system/bin/bootanimation
     class main
     user graphics
